@@ -5,15 +5,15 @@ import "container/list"
 const ROOT_STATE uint32 = 0
 
 type Automaton struct {
-	rootNode    *node
+	rootState   *stateNode
 	maxStateNum uint32
 }
 
 func NewAutomaton(words []string) *Automaton {
 	inst := &Automaton{
-		rootNode: newNode(ROOT_STATE),
+		rootState: newState(ROOT_STATE),
 	}
-	inst.rootNode.failNode = inst.rootNode
+	inst.rootState.failState = inst.rootState
 
 	for _, word := range words {
 		inst.addWord(word)
@@ -25,20 +25,20 @@ func NewAutomaton(words []string) *Automaton {
 func (m *Automaton) Search(text string) ([]string, []uint32) {
 	matchTextCount := make(map[string]uint32, 0)
 
-	node := m.rootNode
+	curState := m.rootState
 	for _, char := range text {
 
-		nextNode := node.gotoNode(char)
-		for nextNode == nil && node.state != ROOT_STATE {
-			node = node.failNode
-			nextNode = node.gotoNode(char)
+		nextState := curState.gotoState(char)
+		for nextState == nil && curState.state != ROOT_STATE {
+			curState = curState.failState
+			nextState = curState.gotoState(char)
 		}
 
-		if nextNode == nil{
-			node = m.rootNode
+		if nextState == nil{
+			curState = m.rootState
 		} else {
-			node = nextNode
-			for _, word := range node.outputWords() {
+			curState = nextState
+			for _, word := range curState.outputWords() {
 				if _, ok := matchTextCount[word]; ok {
 					matchTextCount[word] += 1
 				} else {
@@ -61,17 +61,17 @@ func (m *Automaton) Search(text string) ([]string, []uint32) {
 }
 
 func (m *Automaton) addWord(word string) {
-	node := m.rootNode
+	curState := m.rootState
 	for _, char := range word {
-		nextNode := node.gotoNode(char)
-		if nextNode == nil {
+		nextState := curState.gotoState(char)
+		if nextState == nil {
 			m.maxStateNum += 1
-			nextNode = newNode(m.maxStateNum)
-			node.gotoNodeMap[char] = nextNode
+			nextState = newState(m.maxStateNum)
+			curState.gotoStateMap[char] = nextState
 		}
-		node = nextNode
+		curState = nextState
 	}
-	node.addOutputWord(word)
+	curState.addOutputWord(word)
 }
 
 func (m *Automaton) printFailTransitions() ([]uint32, []uint32) {
@@ -79,19 +79,19 @@ func (m *Automaton) printFailTransitions() ([]uint32, []uint32) {
 	failStates := make([]uint32, 0, m.maxStateNum)
 
 	queue := list.New()
-	queue.PushBack(m.rootNode)
+	queue.PushBack(m.rootState)
 
-	item := queue.Front()
+	stateItem := queue.Front()
 
-	for item != nil {
-		curNode := item.Value.(*node)
-		states = append(states, curNode.state)
-		failStates = append(failStates, curNode.failNode.state)
-		for _, node := range curNode.gotoNodeMap {
+	for stateItem != nil {
+		curState := stateItem.Value.(*stateNode)
+		states = append(states, curState.state)
+		failStates = append(failStates, curState.failState.state)
+		for _, node := range curState.gotoStateMap {
 			queue.PushBack(node)
 		}
 
-		item = item.Next()
+		stateItem = stateItem.Next()
 	}
 
 	return states, failStates
@@ -100,55 +100,55 @@ func (m *Automaton) printFailTransitions() ([]uint32, []uint32) {
 func (m *Automaton) initFailTransitions() {
 
 	queue := list.New()
-	for _, node := range m.rootNode.gotoNodeMap {
-		node.failNode = m.rootNode
+	for _, node := range m.rootState.gotoStateMap {
+		node.failState = m.rootState
 		queue.PushBack(node)
 	}
-	curNode := queue.Front()
+	stateItem := queue.Front()
 
-	for curNode != nil {
-		mNode := curNode.Value.(*node)
-		for char, gotoNode := range mNode.gotoNodeMap {
-			queue.PushBack(gotoNode)
+	for stateItem != nil {
+		curState := stateItem.Value.(*stateNode)
+		for char, gotoState := range curState.gotoStateMap {
+			queue.PushBack(gotoState)
 			// 递归地找出gotoNode的failedNode
-			for mNode.failNode.state != ROOT_STATE && mNode.failNode.gotoNode(char) == nil {
-				mNode = mNode.failNode
+			for curState.failState.state != ROOT_STATE && curState.failState.gotoState(char) == nil {
+				curState = curState.failState
 			}
 
-			if mNode.failNode.state == ROOT_STATE && mNode.failNode.gotoNode(char) == nil {
-				gotoNode.failNode = m.rootNode
+			if curState.failState.state == ROOT_STATE && curState.failState.gotoState(char) == nil {
+				gotoState.failState = m.rootState
 			} else {
-				gotoNode.failNode = mNode.failNode.gotoNode(char)
+				gotoState.failState = curState.failState.gotoState(char)
 			}
 			// 更新output
-			gotoNode.addOutputWord(gotoNode.failNode.outputWords()...)
+			gotoState.addOutputWord(gotoState.failState.outputWords()...)
 		}
 
-		curNode = curNode.Next()
+		stateItem = stateItem.Next()
 	}
 }
 
-type node struct {
-	state       uint32
-	failNode    *node
-	output      []string
-	gotoNodeMap map[int32]*node
+type stateNode struct {
+	state        uint32
+	failState    *stateNode
+	output       []string
+	gotoStateMap map[int32]*stateNode
 }
 
-func newNode(state uint32) *node {
-	return &node{
-		state:       state,
-		failNode:    nil,
-		output:      nil,
-		gotoNodeMap: make(map[int32]*node, 0),
+func newState(state uint32) *stateNode {
+	return &stateNode{
+		state:        state,
+		failState:    nil,
+		output:       nil,
+		gotoStateMap: make(map[int32]*stateNode, 0),
 	}
 }
 
-func (n *node) gotoNode(char int32) *node {
-	return n.gotoNodeMap[char]
+func (n *stateNode) gotoState(char int32) *stateNode {
+	return n.gotoStateMap[char]
 }
 
-func (n *node) addOutputWord(words ...string) {
+func (n *stateNode) addOutputWord(words ...string) {
 	if len(words) <= 0 {
 		return
 	}
@@ -169,6 +169,6 @@ func (n *node) addOutputWord(words ...string) {
 	return
 }
 
-func (n *node) outputWords()[]string{
+func (n *stateNode) outputWords()[]string{
 	return n.output
 }
